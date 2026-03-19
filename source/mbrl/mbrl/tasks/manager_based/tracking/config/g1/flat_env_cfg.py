@@ -20,6 +20,8 @@ from mbrl.tasks.manager_based.tracking.tracking_env_cfg import (
     TrackingEnvCfg,
 )
 
+JOINT_TRACKING_THRESHOLD_PRETRAIN = 1.0e6
+
 
 def _resolve_default_motion_file() -> str:
     candidates = [
@@ -111,7 +113,7 @@ class ObservationsCfg_PRETRAIN(ObservationsCfg):
     class SystemTerminationCfg(ObsGroup):
         joint_tracking = ObsTerm(
             func=mdp.bad_joint_tracking_obs,
-            params={"command_name": "motion", "threshold": 4.0},
+            params={"command_name": "motion", "threshold": JOINT_TRACKING_THRESHOLD_PRETRAIN},
         )
 
         def __post_init__(self):
@@ -157,13 +159,23 @@ class RewardsCfg_MBRL(RewardsCfg):
 
 
 @configclass
+class RewardsCfg_PRETRAIN_WHOLEBODY9(RewardsCfg):
+    """Whole-body-style tracking rewards for pretraining (9 terms)."""
+
+    # Keep the same 9 core terms used in whole-body style tracking.
+    # 8 motion-tracking terms + action-rate penalty.
+    mmotion_body_pos_global = None
+    motion_body_ori_global = None
+
+
+@configclass
 class TerminationsCfg_MBRL(TerminationsCfg):
-    anchor_pos = None
-    anchor_ori = None
-    ee_body_pos = None
+    # anchor_pos = None
+    # anchor_ori = None
+    # ee_body_pos = None
     joint_tracking = DoneTerm(
         func=mdp.bad_joint_tracking,
-        params={"command_name": "motion", "threshold": 4.0},
+        params={"command_name": "motion", "threshold": JOINT_TRACKING_THRESHOLD_PRETRAIN},
     )
 
 
@@ -195,8 +207,6 @@ class G1FlatEnvCfg(TrackingEnvCfg):
             "right_elbow_link",
             "right_wrist_yaw_link",
         ]
-        self.terminations.ee_body_pos = None
-        self.terminations.anchor_pos = None
         self.episode_length_s = 10.0
 
 
@@ -208,7 +218,7 @@ class G1FlatEnvCfg_INIT(G1FlatEnvCfg):
 @configclass
 class G1FlatEnvCfg_PRETRAIN(G1FlatEnvCfg):
     observations: ObservationsCfg_PRETRAIN = ObservationsCfg_PRETRAIN()
-    rewards: RewardsCfg_MBRL = RewardsCfg_MBRL()
+    rewards: RewardsCfg_PRETRAIN_WHOLEBODY9 = RewardsCfg_PRETRAIN_WHOLEBODY9()
     terminations: TerminationsCfg_MBRL = TerminationsCfg_MBRL()
 
     def __post_init__(self):
@@ -219,6 +229,8 @@ class G1FlatEnvCfg_PRETRAIN(G1FlatEnvCfg):
 
 @configclass
 class G1FlatEnvCfg_FINETUNE(G1FlatEnvCfg_PRETRAIN):
+    rewards: RewardsCfg_MBRL = RewardsCfg_MBRL()
+
     def __post_init__(self):
         super().__post_init__()
         self.scene.num_envs = 16
@@ -228,6 +240,8 @@ class G1FlatEnvCfg_FINETUNE(G1FlatEnvCfg_PRETRAIN):
 
 @configclass
 class G1FlatEnvCfg_VISUALIZE(G1FlatEnvCfg_PRETRAIN):
+    rewards: RewardsCfg_MBRL = RewardsCfg_MBRL()
+
     def __post_init__(self):
         super().__post_init__()
         self.scene.num_envs = 10
