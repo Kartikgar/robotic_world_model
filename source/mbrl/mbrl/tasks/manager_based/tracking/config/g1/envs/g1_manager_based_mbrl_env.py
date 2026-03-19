@@ -53,8 +53,8 @@ class G1ManagerBasedMBRLEnv(ManagerBasedMBRLEnv):
 
         traj_ids = self.motion_trajectory_ids[env_ids]
         time_steps = self.motion_time_steps[env_ids]
-        joint_pos = self.motion.joint_pos[traj_ids, time_steps]
-        joint_vel = self.motion.joint_vel[traj_ids, time_steps]
+        joint_pos = self.motion.get_joint_pos(traj_ids, time_steps)
+        joint_vel = self.motion.get_joint_vel(traj_ids, time_steps)
         if joint_pos.shape[-1] != self.num_joints:
             raise RuntimeError(
                 f"Motion joint dim ({joint_pos.shape[-1]}) does not match robot joint dim ({self.num_joints})."
@@ -62,14 +62,15 @@ class G1ManagerBasedMBRLEnv(ManagerBasedMBRLEnv):
         self.motion_joint_pos[env_ids] = joint_pos
         self.motion_joint_vel[env_ids] = joint_vel
 
+    def _sample_time_steps_for_trajectories(self, trajectory_ids: torch.Tensor) -> torch.Tensor:
+        if trajectory_ids.numel() == 0:
+            return torch.zeros_like(trajectory_ids)
+        lengths = torch.clamp(self.motion.trajectory_time_step_total[trajectory_ids], min=1)
+        return (torch.rand(trajectory_ids.shape, device=self.device) * lengths.float()).long()
+
     def _init_imagination_command(self):
         self.motion_trajectory_ids = self._sample_trajectory_ids(self.num_imagination_envs)
-        self.motion_time_steps = torch.randint(
-            low=0,
-            high=max(self.motion.time_step_total, 1),
-            size=(self.num_imagination_envs,),
-            device=self.device,
-        )
+        self.motion_time_steps = self._sample_time_steps_for_trajectories(self.motion_trajectory_ids)
         self.motion_joint_pos = torch.zeros(self.num_imagination_envs, self.num_joints, device=self.device)
         self.motion_joint_vel = torch.zeros(self.num_imagination_envs, self.num_joints, device=self.device)
         self._update_motion_buffers()
@@ -78,17 +79,13 @@ class G1ManagerBasedMBRLEnv(ManagerBasedMBRLEnv):
         if len(env_ids) == 0:
             return
         self.motion_trajectory_ids[env_ids] = self._sample_trajectory_ids(len(env_ids))
-        self.motion_time_steps[env_ids] = torch.randint(
-            low=0,
-            high=max(self.motion.time_step_total, 1),
-            size=(len(env_ids),),
-            device=self.device,
-        )
+        self.motion_time_steps[env_ids] = self._sample_time_steps_for_trajectories(self.motion_trajectory_ids[env_ids])
         self._update_motion_buffers(env_ids)
 
     def _advance_motion_command(self):
         self.motion_time_steps += 1
-        overflow_ids = (self.motion_time_steps >= self.motion.time_step_total).nonzero(as_tuple=False).squeeze(-1)
+        env_lengths = torch.clamp(self.motion.trajectory_time_step_total[self.motion_trajectory_ids], min=1)
+        overflow_ids = (self.motion_time_steps >= env_lengths).nonzero(as_tuple=False).squeeze(-1)
         if overflow_ids.numel() > 0:
             self.motion_time_steps[overflow_ids] = 0
             self.motion_trajectory_ids[overflow_ids] = self._sample_trajectory_ids(len(overflow_ids))
