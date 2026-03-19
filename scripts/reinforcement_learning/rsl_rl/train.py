@@ -28,6 +28,7 @@ parser.add_argument(
     "--distributed", action="store_true", default=False, help="Run training with multiple GPUs or nodes."
 )
 parser.add_argument("--system_dynamics_load_path", type=str, default=None, help="Dynamics model load path.")
+parser.add_argument("--motion_file", type=str, default=None, help="Motion file (.npz) path for tracking tasks.")
 # append RSL-RL cli arguments
 cli_args.add_rsl_rl_args(parser)
 # append AppLauncher cli args
@@ -86,7 +87,7 @@ from isaaclab.envs import (
 from isaaclab.utils.dict import print_dict
 from isaaclab.utils.io import dump_yaml
 
-from isaaclab_rl.rsl_rl import RslRlBaseRunnerCfg, RslRlVecEnvWrapper
+from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlVecEnvWrapper
 
 import isaaclab_tasks  # noqa: F401
 from isaaclab_tasks.utils import get_checkpoint_path
@@ -102,7 +103,7 @@ torch.backends.cudnn.benchmark = False
 
 
 @hydra_task_config(args_cli.task, "rsl_rl_cfg_entry_point")
-def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agent_cfg: RslRlBaseRunnerCfg):
+def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agent_cfg: RslRlOnPolicyRunnerCfg):
     """Train with RSL-RL agent."""
     # override configurations with non-hydra CLI arguments
     agent_cfg = cli_args.update_rsl_rl_cfg(agent_cfg, args_cli)
@@ -115,6 +116,16 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     # note: certain randomizations occur in the environment initialization so we set the seed here
     env_cfg.seed = agent_cfg.seed
     env_cfg.sim.device = args_cli.device if args_cli.device is not None else env_cfg.sim.device
+    if args_cli.motion_file is not None:
+        motion_cfg = getattr(getattr(env_cfg, "commands", None), "motion", None)
+        if motion_cfg is None or not hasattr(motion_cfg, "motion_file"):
+            raise ValueError(
+                "--motion_file was provided, but this task does not expose `env.commands.motion.motion_file`."
+            )
+        if not os.path.isfile(args_cli.motion_file):
+            raise FileNotFoundError(f"Invalid motion file path: {args_cli.motion_file}")
+        print(f"[INFO] Overriding motion file from CLI: {args_cli.motion_file}")
+        motion_cfg.motion_file = args_cli.motion_file
 
     # multi-gpu training configuration
     if args_cli.distributed:

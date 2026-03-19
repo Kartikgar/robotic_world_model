@@ -31,6 +31,7 @@ parser.add_argument(
     help="Use the pre-trained checkpoint from Nucleus.",
 )
 parser.add_argument("--real-time", action="store_true", default=False, help="Run in real-time, if possible.")
+parser.add_argument("--motion_file", type=str, default=None, help="Motion file (.npz) path for tracking tasks.")
 # append RSL-RL cli arguments
 cli_args.add_rsl_rl_args(parser)
 # append AppLauncher cli args
@@ -90,6 +91,16 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     # note: certain randomizations occur in the environment initialization so we set the seed here
     env_cfg.seed = agent_cfg.seed
     env_cfg.sim.device = args_cli.device if args_cli.device is not None else env_cfg.sim.device
+    if args_cli.motion_file is not None:
+        motion_cfg = getattr(getattr(env_cfg, "commands", None), "motion", None)
+        if motion_cfg is None or not hasattr(motion_cfg, "motion_file"):
+            raise ValueError(
+                "--motion_file was provided, but this task does not expose `env.commands.motion.motion_file`."
+            )
+        if not os.path.isfile(args_cli.motion_file):
+            raise FileNotFoundError(f"Invalid motion file path: {args_cli.motion_file}")
+        print(f"[INFO] Overriding motion file from CLI: {args_cli.motion_file}")
+        motion_cfg.motion_file = args_cli.motion_file
 
     # specify directory for logging experiments
     log_root_path = os.path.join("logs", "rsl_rl", agent_cfg.experiment_name)

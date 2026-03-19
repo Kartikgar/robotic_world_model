@@ -8,3 +8,6 @@ Config-based workflow environments.
 """
 
 import gymnasium as gym
+
+from .locomotion import *  # noqa: F401,F403
+from .tracking import *  # noqa: F401,F403
